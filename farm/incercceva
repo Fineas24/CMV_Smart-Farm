@@ -1,0 +1,128 @@
+import mysql.connector
+from picamera2 import Picamera2
+from datetime import datetime
+import RPi.GPIO as GPIO
+import time
+
+# Set up the GPIO mode
+GPIO.setmode(GPIO.BCM)  # Use BCM numbering
+
+# Set up GPIO17 as an input with a pull-up resistor
+GPIO.setup(17, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+
+# Creează un obiect camera
+picam2 = Picamera2()
+
+# Configură camera
+camera_config = picam2.create_still_configuration()
+picam2.configure(camera_config)
+
+# Configură conexiunea la baza de date MySQL
+conn = mysql.connector.connect(
+    host="localhost",
+    user="username",  # Schimbați "username" cu numele de utilizator al bazei de date
+    password="password",  # Schimbați "password" cu parola bazei de date
+    database="smartfarm"
+)
+
+# Funcție pentru a obține data și ora curente într-un format specificat
+def get_timestamp():
+    return datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+# Funcție pentru a adăuga un link la o poză în baza de date
+def add_photo_link(link):
+    cursor = conn.cursor()
+    timestamp = get_timestamp()
+    query = "INSERT INTO `inreg_poze` (`nume`, `link`, `sters`, `obs`) VALUES (%s, %s, %s, %s)"
+    values = ("", link, "NU", "")
+    cursor.execute(query, values)
+    conn.commit()
+    cursor.close()
+
+# Capturează imaginea cu un nume de fișier bazat pe data și ora curente
+def capture_image():
+    timestamp = get_timestamp()
+    file_path = f"/var/www/html/smartfarm/photos/poza_{timestamp}.jpg"
+    picam2.start()
+    time.sleep(2)  # Așteaptă 2 secunde pentru a stabiliza imaginea
+    picam2.capture_file(file_path)
+    picam2.stop()
+    print(f"Fotografie salvată: {file_path}")
+    file_link = f"http://127.0.0.1/smartfarm/photos/poza_{timestamp}.jpg"
+    add_photo_link(file_link)  # Adăugați linkul la poza în baza de date
+
+# Asigură-te că directorul de destinație există
+import os
+os.makedirs('/var/www/html/smartfarm/photos', exist_ok=True)
+
+flag = 0
+try:
+    while True:
+        # Read the input from GPIO17
+        input_state = GPIO.input(17)
+        
+        # Print the input state
+        if input_state == GPIO.HIGH:
+            print("Așteaptă intrusul")
+
+        if input_state == GPIO.LOW and flag == 0:
+            print("Face poză")
+            capture_image()
+            flag = 1
+        if input_state == GPIO.HIGH and flag == 1:
+            flag = 0
+        
+        # Sleep for a short time to debounce
+        time.sleep(0.1)
+
+except KeyboardInterrupt:
+    # Clean up GPIO settings before exiting
+    GPIO.cleanup()
+    print("Program exited cleanly")
+
+
+
+
+    from flask import Flask, render_template, send_from_directory
+
+app = Flask(__name__)
+
+# Ruta pentru afișarea paginii principale cu toate linkurile către poze
+@app.route('/')
+def index():
+    # Aici trebuie să obțineți linkurile către pozele din baza de date
+    links_to_photos = [
+        "link_poza_1.jpg",
+        "link_poza_2.jpg",
+        "link_poza_3.jpg",
+        # Adăugați alte linkuri dacă este necesar
+    ]
+    return render_template('index.html', links=links_to_photos)
+
+# Ruta pentru afișarea paginii cu o poză specifică
+@app.route('/photo/<path:filename>')
+def get_photo(filename):
+    return send_from_directory('static', filename)
+
+if __name__ == '__main__':
+    app.run(debug=True)
+
+
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Poze</title>
+</head>
+<body>
+    <h1>Linkurile cu poze:</h1>
+    <ul>
+    {% for link in links %}
+        <li><a href="/photo/{{ link }}">{{ link }}</a></li>
+    {% endfor %}
+    </ul>
+</body>
+</html>

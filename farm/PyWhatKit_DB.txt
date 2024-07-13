@@ -1,0 +1,5 @@
+Date: 24/5/2024
+Time: 11:30
+Phone Number: +40748942490
+Message: Hello, this is a test message from Python!
+--------------------
